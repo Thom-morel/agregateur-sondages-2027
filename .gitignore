@@ -1,0 +1,9 @@
+# Fichiers techniques Python (cache de compilation, régénérés automatiquement)
+__pycache__/
+*.pyc
+
+# Fichiers système macOS
+.DS_Store
+
+# Fichiers temporaires créés par Excel quand un classeur est ouvert
+~$*.xlsx
