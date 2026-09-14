@@ -114,29 +114,36 @@ def fraicheur(date_sondage, date_ref, demi_vie_jours):
     return 0.5 ** (jours / demi_vie_jours)
 
 
-numerateur_blocs   = defaultdict(float)
-denominateur_blocs = defaultdict(float)
+def calculer_moyennes(sondages, date_ref):
+    """Moyenne pondérée par bloc des sondages fournis, la fraîcheur étant
+    mesurée depuis date_ref. Retourne (moyennes, details) — details sert à
+    l'affichage."""
+    numerateur_blocs   = defaultdict(float)
+    denominateur_blocs = defaultdict(float)
+    details = []
 
-details = []   # pour l'affichage
+    for s in sondages:
+        inst    = s['institut']
+        rating  = ratings.get(inst, RATING_DEFAUT)
+        fraic   = fraicheur(s['date'], date_ref, DEMI_VIE_JOURS)
+        racine_n = math.sqrt(s['n'])
+        poids   = rating * fraic * racine_n
 
-for s in sondages:
-    inst    = s['institut']
-    rating  = ratings.get(inst, RATING_DEFAUT)
-    fraic   = fraicheur(s['date'], DATE_REFERENCE, DEMI_VIE_JOURS)
-    racine_n = math.sqrt(s['n'])
-    poids   = rating * fraic * racine_n
+        for bloc, score in s['scores'].items():
+            numerateur_blocs[bloc]   += score * poids
+            denominateur_blocs[bloc] += poids
 
-    for bloc, score in s['scores'].items():
-        numerateur_blocs[bloc]   += score * poids
-        denominateur_blocs[bloc] += poids
+        details.append({**s, 'rating': rating, 'fraicheur': fraic, 'poids': poids})
 
-    details.append({**s, 'rating': rating, 'fraicheur': fraic, 'poids': poids})
+    moyennes = {
+        bloc: numerateur_blocs[bloc] / denominateur_blocs[bloc]
+        for bloc in BLOCS
+        if denominateur_blocs[bloc] > 0
+    }
+    return moyennes, details
 
-moyennes = {
-    bloc: numerateur_blocs[bloc] / denominateur_blocs[bloc]
-    for bloc in BLOCS
-    if denominateur_blocs[bloc] > 0
-}
+
+moyennes, details = calculer_moyennes(sondages, DATE_REFERENCE)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -173,22 +180,35 @@ print()
 # ══════════════════════════════════════════════════════════════
 # ÉTAPE 4 — EXPORT CSV
 # ══════════════════════════════════════════════════════════════
-# Une ligne est ajoutée à chaque exécution.
-# Le fichier accumule l'historique des calculs dans le temps.
+# Le fichier est ENTIÈREMENT régénéré à chaque exécution (ce n'est plus un
+# journal d'ajouts) : un point par date de fin de terrain distincte, calculé
+# avec les seuls sondages connus à cette date. Conséquences :
+#   - le script est idempotent : le relancer dix fois donne le même fichier ;
+#   - un lot de plusieurs sondages saisis d'un coup produit plusieurs points ;
+#   - un sondage saisi après coup corrige son propre point et tous les suivants.
+# NE PAS éditer ce fichier à la main : il est écrasé à chaque exécution.
+#
+# Chaque point est daté à la FIN DE TERRAIN (et non à la date d'exécution) :
+# il se place ainsi là où vivait la donnée. Mesurer la fraîcheur depuis cette
+# date plutôt que depuis aujourd'hui ne change PAS les pourcentages : la
+# fraîcheur ne varie que d'un facteur commun qui se simplifie dans la moyenne.
+# (Le nom de colonne 'date_calcul' est conservé pour compatibilité des courbes.)
 
 FICHIER_CSV = 'historique_agregateur.csv'
 colonnes    = ['date_calcul'] + BLOCS + ['total']
 
-ligne = {'date_calcul': DATE_REFERENCE.strftime('%Y-%m-%d')}
-ligne.update({bloc: round(moy, 2) for bloc, moy in moyennes.items()})
-ligne['total'] = round(total, 2)
+dates_points = sorted({s['date'] for s in sondages})
 
-# Créer le fichier avec en-têtes s'il n'existe pas encore
-fichier_existait = os.path.exists(FICHIER_CSV)
-with open(FICHIER_CSV, 'a', newline='', encoding='utf-8') as f:
+with open(FICHIER_CSV, 'w', newline='', encoding='utf-8') as f:
     writer = csv.DictWriter(f, fieldnames=colonnes)
-    if not fichier_existait:
-        writer.writeheader()
-    writer.writerow(ligne)
+    writer.writeheader()
+    for date_point in dates_points:
+        inclus = [s for s in sondages if s['date'] <= date_point]
+        moy_point, _ = calculer_moyennes(inclus, date_point)
+        ligne = {'date_calcul': date_point.strftime('%Y-%m-%d')}
+        ligne.update({bloc: round(m, 2) for bloc, m in moy_point.items()})
+        ligne['total'] = round(sum(moy_point.values()), 2)
+        writer.writerow(ligne)
 
-print(f"  → Résultats ajoutés à {FICHIER_CSV}")
+print(f"  → {FICHIER_CSV} régénéré : {len(dates_points)} points "
+      f"(du {dates_points[0]:%d/%m/%Y} au {dates_points[-1]:%d/%m/%Y})")
