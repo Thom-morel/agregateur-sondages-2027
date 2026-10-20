@@ -4,9 +4,11 @@ agregateur.py
 Calcule la moyenne pondérée des sondages présidentiels 2027 (T1).
 
 Poids de chaque sondage :
-  poids = rating_institut × fraîcheur × √échantillon
+  poids = rating_institut × fraîcheur × √min(échantillon, plafond)
 
 La fraîcheur décroît exponentiellement depuis aujourd'hui.
+Une série sans plafond est calculée en parallèle, pour comparer les deux
+méthodes au résultat réel à l'issue de la campagne.
 Le rating est lu depuis calculer_rating.py (même dossier).
 
 Usage :
@@ -32,6 +34,13 @@ FICHIER_RATING   = 'template_sondages.xlsx'
 
 DATE_REFERENCE   = datetime.today()   # aujourd'hui par défaut
 DEMI_VIE_JOURS   = 14                 # fraîcheur : demi-vie en jours
+
+# Plafond de l'échantillon pris en compte dans le poids. Au-delà de quelques
+# milliers de répondants, l'erreur d'un sondage tient surtout à la méthode de
+# l'institut (redressements, panel), qui ne diminue pas avec la taille : sans
+# plafond, √n surpondère les très gros échantillons (ex. Ipsos 09/09/2026,
+# n = 13 060). Seuil conventionnel ; entre 2 000 et 5 000, l'effet varie peu.
+PLAFOND_ECHANTILLON = 3000
 # Les paramètres du rating historique (référence, demi-vies, minimum de
 # scrutins) vivent désormais dans calculer_rating.py — source unique.
 
@@ -114,10 +123,10 @@ def fraicheur(date_sondage, date_ref, demi_vie_jours):
     return 0.5 ** (jours / demi_vie_jours)
 
 
-def calculer_moyennes(sondages, date_ref):
+def calculer_moyennes(sondages, date_ref, plafond=PLAFOND_ECHANTILLON):
     """Moyenne pondérée par bloc des sondages fournis, la fraîcheur étant
-    mesurée depuis date_ref. Retourne (moyennes, details) — details sert à
-    l'affichage."""
+    mesurée depuis date_ref. plafond=None calcule la série sans plafond.
+    Retourne (moyennes, details) — details sert à l'affichage."""
     numerateur_blocs   = defaultdict(float)
     denominateur_blocs = defaultdict(float)
     details = []
@@ -126,7 +135,8 @@ def calculer_moyennes(sondages, date_ref):
         inst    = s['institut']
         rating  = ratings.get(inst, RATING_DEFAUT)
         fraic   = fraicheur(s['date'], date_ref, DEMI_VIE_JOURS)
-        racine_n = math.sqrt(s['n'])
+        n_retenu = s['n'] if plafond is None else min(s['n'], plafond)
+        racine_n = math.sqrt(n_retenu)
         poids   = rating * fraic * racine_n
 
         for bloc, score in s['scores'].items():
@@ -144,6 +154,7 @@ def calculer_moyennes(sondages, date_ref):
 
 
 moyennes, details = calculer_moyennes(sondages, DATE_REFERENCE)
+moyennes_sans_plafond, _ = calculer_moyennes(sondages, DATE_REFERENCE, plafond=None)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -165,12 +176,14 @@ print()
 print('═' * 72)
 print(f"MOYENNE PONDÉRÉE — T1 PRÉSIDENTIELLE 2027")
 print(f"(calculée le {DATE_REFERENCE.strftime('%d/%m/%Y')}, "
-      f"demi-vie fraîcheur = {DEMI_VIE_JOURS} jours)")
+      f"demi-vie fraîcheur = {DEMI_VIE_JOURS} jours, "
+      f"échantillon plafonné à {PLAFOND_ECHANTILLON})")
 print('═' * 72)
 print()
 for bloc, moy in sorted(moyennes.items(), key=lambda x: -x[1]):
     barre = '█' * int(moy / 2)
-    print(f"  {bloc:<14} {moy:>6.1f}%  {barre}")
+    print(f"  {bloc:<14} {moy:>6.1f}%  {barre:<20} "
+          f"(sans plafond : {moyennes_sans_plafond[bloc]:.1f}%)")
 print()
 total = sum(moyennes.values())
 print(f"  {'TOTAL':<14} {total:>6.1f}%")
@@ -193,22 +206,29 @@ print()
 # date plutôt que depuis aujourd'hui ne change PAS les pourcentages : la
 # fraîcheur ne varie que d'un facteur commun qui se simplifie dans la moyenne.
 # (Le nom de colonne 'date_calcul' est conservé pour compatibilité des courbes.)
+#
+# Deux fichiers, de même format : la série officielle (avec plafond, lue par
+# probabilites.py) et la série sans plafond, gardée pour comparer les deux
+# méthodes au résultat de l'élection.
 
-FICHIER_CSV = 'historique_agregateur.csv'
+FICHIER_CSV              = 'historique_agregateur.csv'
+FICHIER_CSV_SANS_PLAFOND = 'historique_agregateur_sans_plafond.csv'
 colonnes    = ['date_calcul'] + BLOCS + ['total']
 
 dates_points = sorted({s['date'] for s in sondages})
 
-with open(FICHIER_CSV, 'w', newline='', encoding='utf-8') as f:
-    writer = csv.DictWriter(f, fieldnames=colonnes)
-    writer.writeheader()
-    for date_point in dates_points:
-        inclus = [s for s in sondages if s['date'] <= date_point]
-        moy_point, _ = calculer_moyennes(inclus, date_point)
-        ligne = {'date_calcul': date_point.strftime('%Y-%m-%d')}
-        ligne.update({bloc: round(m, 2) for bloc, m in moy_point.items()})
-        ligne['total'] = round(sum(moy_point.values()), 2)
-        writer.writerow(ligne)
+for fichier, plafond in [(FICHIER_CSV, PLAFOND_ECHANTILLON),
+                         (FICHIER_CSV_SANS_PLAFOND, None)]:
+    with open(fichier, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=colonnes)
+        writer.writeheader()
+        for date_point in dates_points:
+            inclus = [s for s in sondages if s['date'] <= date_point]
+            moy_point, _ = calculer_moyennes(inclus, date_point, plafond)
+            ligne = {'date_calcul': date_point.strftime('%Y-%m-%d')}
+            ligne.update({bloc: round(m, 2) for bloc, m in moy_point.items()})
+            ligne['total'] = round(sum(moy_point.values()), 2)
+            writer.writerow(ligne)
 
-print(f"  → {FICHIER_CSV} régénéré : {len(dates_points)} points "
-      f"(du {dates_points[0]:%d/%m/%Y} au {dates_points[-1]:%d/%m/%Y})")
+    print(f"  → {fichier} régénéré : {len(dates_points)} points "
+          f"(du {dates_points[0]:%d/%m/%Y} au {dates_points[-1]:%d/%m/%Y})")
