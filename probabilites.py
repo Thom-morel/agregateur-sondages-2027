@@ -70,7 +70,8 @@ def lire_dernier_calcul(fichier):
     derniere = lignes[-1]
     date = derniere.pop('date_calcul')
     derniere.pop('total', None)
-    blocs   = list(derniere.keys())
+    # Un bloc sans valeur (cellule vide) n'est pas mesuré à cette date : on l'écarte
+    blocs   = [b for b, v in derniere.items() if v not in ('', None)]
     scores  = np.array([float(derniere[b]) for b in blocs])
     return date, blocs, scores
 

@@ -45,7 +45,18 @@ PLAFOND_ECHANTILLON = 3000
 # scrutins) vivent désormais dans calculer_rating.py — source unique.
 
 # Blocs politiques suivis (colonnes du fichier sondages)
-BLOCS = ['LFI', 'PS-PP', 'EELV', 'Centre', 'LR', 'RN', 'Reconquête']
+# 'Lisnard' est suivi à part de 'LR' (Retailleau) : il prend aussi des voix au
+# Centre et au RN, une fusion « droite » ne serait donc pas comparable à LR seul.
+BLOCS = ['LFI', 'PS-PP', 'EELV', 'Centre', 'LR', 'Lisnard', 'RN', 'Reconquête']
+
+# RUPTURE DE SÉRIE — à partir de cette date, la ligne principale de chaque
+# sondage inclut Lisnard quand l'institut a testé la configuration
+# Philippe + Glucksmann + Retailleau + Lisnard. Avant, sa colonne est vide
+# (ignorée). Pendant quelques semaines (demi-vie de 14 jours), la moyenne
+# mélange des sondages avec et sans Lisnard : la baisse de LR sur cette
+# période tient en partie au changement d'hypothèse. À signaler sur le
+# graphique (ligne verticale).
+DATE_BASCULE_LISNARD = datetime(2026, 10, 15)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -232,3 +243,6 @@ for fichier, plafond in [(FICHIER_CSV, PLAFOND_ECHANTILLON),
 
     print(f"  → {fichier} régénéré : {len(dates_points)} points "
           f"(du {dates_points[0]:%d/%m/%Y} au {dates_points[-1]:%d/%m/%Y})")
+
+print(f"  ⚠ Rupture de série : Lisnard intégré au scénario principal "
+      f"à partir du {DATE_BASCULE_LISNARD:%d/%m/%Y} (à signaler sur le graphique)")

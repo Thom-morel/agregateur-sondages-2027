@@ -140,6 +140,14 @@ Un fichier Excel par scrutin (ou un fichier unique avec une feuille par scrutin)
 
 Un template Excel a déjà été produit (template_sondages.xlsx).
 
+## Scénario de référence 2027 et ruptures de série
+
+La feuille « T1 — intentions de vote » de `sondages_2027.xlsx` contient UNE ligne par sondage : la configuration de référence. Les autres configurations vont dans « T1 — scénarios alternatifs » (non agrégées). Critère de choix : l'hypothèse testée par l'ensemble des instituts. Une cellule vide ou à 0 signifie « bloc non testé ».
+
+Ruptures de série connues (à signaler sur le graphique) :
+- **Le Pen / Bardella** (printemps 2026) : passage de Bardella à Le Pen comme candidate RN de référence (correction manuelle Ipsos 28/05).
+- **Lisnard, 15/10/2026** (`DATE_BASCULE_LISNARD` dans `agregateur.py`) : colonne `Lisnard` créée, distincte de `LR` (Retailleau), car Lisnard prend aussi des voix au Centre et au RN. Ligne principale = Philippe + Glucksmann + Retailleau + Lisnard quand l'institut l'a testée ; sinon, l'ancienne configuration est conservée et la colonne Lisnard reste vide. Pendant la transition, la moyenne mélange les deux hypothèses : LR, Centre et RN y sont légèrement surestimés et le total dépasse ~94 %.
+
 ## Roadmap de développement
 
 ### Phase 1 — Moyenne pondérée simple
